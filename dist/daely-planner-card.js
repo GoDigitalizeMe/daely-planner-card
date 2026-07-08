@@ -160,6 +160,7 @@ class DaelyPlannerCard extends HTMLElement {
     this._refreshTimer = null;
     this._tickTimer = null;
     this._fetching = false;
+    this._filter = { persons: new Set(), calendars: new Set() };
   }
 
   setConfig(config) {
@@ -339,6 +340,45 @@ class DaelyPlannerCard extends HTMLElement {
     return { banner, timedLayoutByDay, startHour, endHour };
   }
 
+  /** Groups calendars by their linked person, deduplicated, in first-seen order. */
+  _personsFromCalendars(calendars) {
+    const byId = new Map();
+    for (const cal of calendars) {
+      const personId = cal.person_entity_id;
+      if (!personId) continue;
+      if (!byId.has(personId)) {
+        byId.set(personId, {
+          person_entity_id: personId,
+          name: cal.person_name || personId,
+          picture: cal.picture,
+          color: cal.color,
+          calendarIds: new Set(),
+        });
+      }
+      byId.get(personId).calendarIds.add(cal.entity_id);
+    }
+    return Array.from(byId.values());
+  }
+
+  /** Calendar entity_ids to highlight, derived from the selected persons/calendars filters. */
+  _highlightedCalendarIds(persons) {
+    const set = new Set();
+    for (const person of persons) {
+      if (this._filter.persons.has(person.person_entity_id)) {
+        for (const id of person.calendarIds) set.add(id);
+      }
+    }
+    for (const id of this._filter.calendars) set.add(id);
+    return set;
+  }
+
+  _toggleFilter(type, id) {
+    const set = type === "person" ? this._filter.persons : this._filter.calendars;
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    this._render();
+  }
+
   _render() {
     if (!this.shadowRoot) return;
 
@@ -358,6 +398,12 @@ class DaelyPlannerCard extends HTMLElement {
     const { dates, today, lang } = this._weekRange();
     const { banner, timedLayoutByDay, startHour, endHour } = this._layout(dates);
     const calendars = (this._data && this._data.calendars) || [];
+    const persons = this._personsFromCalendars(calendars);
+    const highlightSet = this._highlightedCalendarIds(persons);
+    const chipEmphasis = (calendarEntityId) => {
+      if (highlightSet.size === 0) return "";
+      return highlightSet.has(calendarEntityId) ? " chip-highlighted" : " chip-dimmed";
+    };
     const title = this._config.title || "Familienplaner";
     const gridHours = endHour - startHour;
     const gridHeight = gridHours * HOUR_HEIGHT_PX;
@@ -413,7 +459,7 @@ class DaelyPlannerCard extends HTMLElement {
                 ? ""
                 : `<span class="chip-time">${lang === "de" ? "Mehrtägig" : "Multi-day"}</span>`;
             return `
-              <button class="chip chip-banner" style="
+              <button class="chip chip-banner${chipEmphasis(item.event.calendar_entity_id)}" style="
                   grid-column: ${item.startCol + 2} / ${item.endCol + 3};
                   grid-row: ${item.row + 1};
                   border-left-color:${item.event.color};
@@ -456,7 +502,7 @@ class DaelyPlannerCard extends HTMLElement {
               minute: "2-digit",
             });
             return `
-              <button class="chip chip-timed" style="
+              <button class="chip chip-timed${chipEmphasis(entry.event.calendar_entity_id)}" style="
                   top:${top}px;
                   height:${height}px;
                   left:calc(${leftPct}% + 2px);
@@ -482,13 +528,33 @@ class DaelyPlannerCard extends HTMLElement {
         ${dayColumns}
       </div>`;
 
-    const legend = this._config.show_legend
-      ? `<div class="legend">${calendars
-          .map(
-            (cal) =>
-              `<div class="legend-item">${avatarOrDot(cal)}${escapeHtml(cal.name)}</div>`
-          )
+    const legendButton = (type, id, item, active, inactive) => `
+      <button class="legend-item ${active ? "active" : ""} ${inactive ? "inactive" : ""}"
+        style="${active ? `box-shadow: 0 0 0 2px ${item.color};` : ""}"
+        data-filter-type="${type}" data-filter-id="${escapeHtml(id)}"
+      >${avatarOrDot(item)}${escapeHtml(item.name)}</button>`;
+
+    const personsRow = persons.length
+      ? `<div class="legend-row legend-persons">${persons
+          .map((person) => {
+            const active = this._filter.persons.has(person.person_entity_id);
+            const anyOverlap = [...person.calendarIds].some((id) => highlightSet.has(id));
+            const inactive = highlightSet.size > 0 && !anyOverlap;
+            return legendButton("person", person.person_entity_id, person, active, inactive);
+          })
           .join("")}</div>`
+      : "";
+
+    const calendarsRow = `<div class="legend-row legend-calendars">${calendars
+      .map((cal) => {
+        const active = this._filter.calendars.has(cal.entity_id);
+        const inactive = highlightSet.size > 0 && !highlightSet.has(cal.entity_id);
+        return legendButton("calendar", cal.entity_id, cal, active, inactive);
+      })
+      .join("")}</div>`;
+
+    const legend = this._config.show_legend
+      ? `<div class="legend">${personsRow}${calendarsRow}</div>`
       : "";
 
     this.shadowRoot.innerHTML = this._styles() + `
@@ -546,6 +612,13 @@ class DaelyPlannerCard extends HTMLElement {
       if (ev.target === backdrop) closeModal();
     });
     root.querySelector(".modal-close").addEventListener("click", closeModal);
+
+    root.querySelectorAll(".legend-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        const { filterType, filterId } = el.dataset;
+        this._toggleFilter(filterType, filterId);
+      });
+    });
   }
 
   _styles() {
@@ -671,9 +744,23 @@ class DaelyPlannerCard extends HTMLElement {
         align-items: flex-start;
         gap: 0;
         z-index: 1;
+        transition: opacity 0.15s ease, box-shadow 0.15s ease;
       }
       .chip-banner {
         width: 100%;
+        transition: opacity 0.15s ease, box-shadow 0.15s ease;
+      }
+      .chip-dimmed {
+        opacity: 0.3;
+      }
+      .chip-highlighted {
+        opacity: 1;
+        border-left-width: 6px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+        z-index: 2;
+      }
+      .chip-timed.chip-highlighted {
+        z-index: 3;
       }
       .chip-time {
         font-size: 0.65em;
@@ -717,17 +804,41 @@ class DaelyPlannerCard extends HTMLElement {
       }
       .legend {
         display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
+        flex-direction: column;
+        gap: 6px;
         padding: 10px 16px;
         border-top: 1px solid var(--divider-color, #eee);
+      }
+      .legend-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .legend-row + .legend-row {
+        padding-top: 6px;
+        border-top: 1px dashed var(--divider-color, #eee);
       }
       .legend-item {
         display: flex;
         align-items: center;
         gap: 6px;
+        font: inherit;
         font-size: 0.82em;
         color: var(--secondary-text-color);
+        background: none;
+        border: none;
+        border-radius: 14px;
+        padding: 3px 8px 3px 3px;
+        cursor: pointer;
+        transition: opacity 0.15s ease, background 0.15s ease;
+      }
+      .legend-item.active {
+        color: var(--primary-text-color);
+        font-weight: 700;
+        background: var(--secondary-background-color, rgba(0,0,0,0.05));
+      }
+      .legend-item.inactive {
+        opacity: 0.4;
       }
       .warning {
         padding: 16px;

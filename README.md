@@ -67,3 +67,12 @@ Verknüpfe in der [Integration](https://github.com/GoDigitalizeMe/daely-planner-
 einen Kalender optional mit einer `person.*`-Entity. Ist eine Person
 hinterlegt, zeigt die Karte automatisch deren Profilbild statt eines
 schlichten Farbpunkts – an Terminen, in der Legende und im Detail-Popup.
+
+## Filtern nach Person oder Kalender
+
+Im Footer der Karte gibt es zwei klickbare Zeilen: oben die **Personen**,
+unten die **Kalender**. Ein Klick markiert die Auswahl (mehrere gleichzeitig
+möglich) und hebt deren Termine im Zeitraster deutlicher hervor
+(kräftigerer Rahmen/Schatten), während alle anderen Termine transparenter
+dargestellt werden – nichts wird komplett ausgeblendet. Erneutes Klicken
+hebt die Auswahl wieder auf.
