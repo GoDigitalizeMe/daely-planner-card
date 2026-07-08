@@ -451,7 +451,7 @@ class DaelyPlannerCard extends HTMLElement {
       banner.rowCount > 0
         ? `
       <div class="row banner-row" style="grid-template-columns: ${columnsTemplate}; grid-auto-rows: ${BANNER_ROW_HEIGHT_PX}px; min-height: ${banner.rowCount * BANNER_ROW_HEIGHT_PX}px;">
-        <div class="gutter-cell banner-gutter-label">${lang === "de" ? "Ganztägig" : "All day"}</div>
+        <div class="gutter-cell"></div>
         ${banner.items
           .map((item) => {
             const time =
@@ -535,7 +535,7 @@ class DaelyPlannerCard extends HTMLElement {
       >${avatarOrDot(item)}${escapeHtml(item.name)}</button>`;
 
     const personsRow = persons.length
-      ? `<div class="legend-row legend-persons">${persons
+      ? `<div class="header-persons">${persons
           .map((person) => {
             const active = this._filter.persons.has(person.person_entity_id);
             const anyOverlap = [...person.calendarIds].some((id) => highlightSet.has(id));
@@ -545,23 +545,30 @@ class DaelyPlannerCard extends HTMLElement {
           .join("")}</div>`
       : "";
 
-    const calendarsRow = `<div class="legend-row legend-calendars">${calendars
-      .map((cal) => {
-        const active = this._filter.calendars.has(cal.entity_id);
-        const inactive = highlightSet.size > 0 && !highlightSet.has(cal.entity_id);
-        return legendButton("calendar", cal.entity_id, cal, active, inactive);
-      })
-      .join("")}</div>`;
-
-    const legend = this._config.show_legend
-      ? `<div class="legend">${personsRow}${calendarsRow}</div>`
+    // Calendars linked to a person are represented by that person in the
+    // header instead, so the footer only lists the unassigned ones.
+    const calendarsWithoutPerson = calendars.filter((cal) => !cal.person_entity_id);
+    const calendarsRow = calendarsWithoutPerson.length
+      ? `<div class="legend-row legend-calendars">${calendarsWithoutPerson
+          .map((cal) => {
+            const active = this._filter.calendars.has(cal.entity_id);
+            const inactive = highlightSet.size > 0 && !highlightSet.has(cal.entity_id);
+            return legendButton("calendar", cal.entity_id, cal, active, inactive);
+          })
+          .join("")}</div>`
       : "";
+
+    const legend =
+      this._config.show_legend && calendarsRow ? `<div class="legend">${calendarsRow}</div>` : "";
 
     this.shadowRoot.innerHTML = this._styles() + `
       <div class="daely-card">
         <div class="header">
-          <div class="header-title">${escapeHtml(title)}</div>
-          <div class="header-range">${monthLabel} · ${rangeLabel}</div>
+          <div class="header-titles">
+            <div class="header-title">${escapeHtml(title)}</div>
+            <div class="header-range">${monthLabel} · ${rangeLabel}</div>
+          </div>
+          ${personsRow}
         </div>
         ${weekdayRow}
         ${bannerRow}
@@ -633,6 +640,11 @@ class DaelyPlannerCard extends HTMLElement {
         color: var(--primary-text-color);
       }
       .header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px 16px;
         padding: 16px 20px;
         background: var(--daely-header-background, linear-gradient(135deg, #F2A6A0, #F6D186));
         color: #2b2320;
@@ -647,6 +659,24 @@ class DaelyPlannerCard extends HTMLElement {
         font-size: 0.9em;
         opacity: 0.85;
         text-transform: capitalize;
+      }
+      .header-persons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .header-persons .legend-item {
+        color: #2b2320;
+        background: rgba(255,255,255,0.4);
+      }
+      .header-persons .legend-item.active {
+        color: #2b2320;
+        background: rgba(255,255,255,0.9);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important;
+      }
+      .header-persons .legend-item.inactive {
+        opacity: 0.55;
       }
       .row {
         display: grid;
@@ -687,15 +717,6 @@ class DaelyPlannerCard extends HTMLElement {
         border-bottom: 1px solid var(--divider-color, #eee);
         padding: 3px 0;
         row-gap: 2px;
-      }
-      .banner-gutter-label {
-        writing-mode: vertical-rl;
-        text-orientation: mixed;
-        font-size: 0.62em;
-        color: var(--secondary-text-color);
-        text-align: center;
-        padding: 2px 0;
-        align-self: stretch;
       }
       .timegrid-row {
         position: relative;

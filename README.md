@@ -70,9 +70,10 @@ schlichten Farbpunkts – an Terminen, in der Legende und im Detail-Popup.
 
 ## Filtern nach Person oder Kalender
 
-Im Footer der Karte gibt es zwei klickbare Zeilen: oben die **Personen**,
-unten die **Kalender**. Ein Klick markiert die Auswahl (mehrere gleichzeitig
-möglich) und hebt deren Termine im Zeitraster deutlicher hervor
-(kräftigerer Rahmen/Schatten), während alle anderen Termine transparenter
-dargestellt werden – nichts wird komplett ausgeblendet. Erneutes Klicken
-hebt die Auswahl wieder auf.
+**Personen** (Kalender mit zugewiesener `person.*`-Entity) erscheinen oben
+im Header neben dem Titel. Kalender **ohne** Personenzuordnung stehen
+weiterhin unten im Footer. Beide Bereiche sind klickbar und funktionieren
+als Filter (Mehrfachauswahl möglich): Ein Klick hebt die zugehörigen
+Termine im Zeitraster deutlicher hervor (kräftigerer Rahmen/Schatten),
+während alle anderen Termine nur transparenter dargestellt werden – nichts
+wird komplett ausgeblendet. Erneutes Klicken hebt die Auswahl wieder auf.
