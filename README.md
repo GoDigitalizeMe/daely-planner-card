@@ -10,6 +10,11 @@ aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
 - **Ganztägige und mehrtägige Termine** (auch mehrtägige Termine *mit*
   Uhrzeit, z. B. eine Dienstreise) werden als Banner oberhalb des
   Zeitrasters über die betroffenen Tage angezeigt.
+- Das Zeitraster zeigt standardmäßig **08:00–18:00 Uhr** ohne Scrollen,
+  lässt sich aber nach oben/unten scrollen, um frühere/spätere Termine zu
+  sehen – der volle Tag (00:00–24:00) ist immer erreichbar.
+- **Wochennavigation**: Pfeile und ein Dropdown im Header wechseln zur
+  vorherigen/nächsten bzw. einer frei wählbaren Woche (±12 Wochen).
 
 Diese Karte ist der reine Anzeige-Layer. Die eigentliche Logik (Kalenderauswahl,
 Farben, Datenabruf) übernimmt die zugehörige Python-Integration:
@@ -55,8 +60,8 @@ show_legend: true
 | `title` | Entity-Titel | Überschrift der Karte |
 | `language` | `de` | Sprache für Wochentage/Monate (`de`/`en`) |
 | `first_day_of_week` | `monday` | Wochenstart |
-| `day_start_hour` | `8` | Erste angezeigte Stunde im Zeitraster |
-| `day_end_hour` | `18` | Letzte angezeigte Stunde im Zeitraster |
+| `day_start_hour` | `8` | Ohne Scrollen sichtbarer Bereich beginnt hier |
+| `day_end_hour` | `18` | Ohne Scrollen sichtbarer Bereich endet hier |
 | `days` | `7` (bzw. `5` bei `show_weekends: false`) | Anzahl angezeigter Tage |
 | `show_weekends` | `true` | `false` blendet Sa/So aus |
 | `show_legend` | `true` | Farblegende der Kalender ein-/ausblenden |

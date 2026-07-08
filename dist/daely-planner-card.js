@@ -29,7 +29,9 @@ const MONTH_LABELS = {
 const HOUR_HEIGHT_PX = 56;
 const MIN_EVENT_HEIGHT_PX = 22;
 const BANNER_ROW_HEIGHT_PX = 26;
-const GUTTER_WIDTH_PX = 46;
+const GUTTER_WIDTH_PX = 56;
+const FULL_DAY_HOURS = 24;
+const WEEK_NAV_RANGE = 12; // dropdown covers +/- this many weeks
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -161,6 +163,8 @@ class DaelyPlannerCard extends HTMLElement {
     this._tickTimer = null;
     this._fetching = false;
     this._filter = { persons: new Set(), calendars: new Set() };
+    this._weekOffset = 0;
+    this._forceScrollReset = true;
   }
 
   setConfig(config) {
@@ -281,17 +285,39 @@ class DaelyPlannerCard extends HTMLElement {
     const today = startOfDay(new Date());
     const jsDay = today.getDay(); // 0 = Sunday
     const diff = (jsDay - firstDay + 7) % 7;
-    const weekStart = addDays(today, -diff);
+    const baseWeekStart = addDays(today, -diff);
+    const weekStart = addDays(baseWeekStart, (this._weekOffset || 0) * 7);
 
     const dates = [];
     for (let i = 0; i < days; i++) dates.push(addDays(weekStart, i));
-    return { dates, today, lang };
+    return { dates, today, lang, days, baseWeekStart, weekStart };
   }
 
-  /** Splits events into banner (all-day/multi-day) items and per-day timed, lane-packed events. */
+  _formatRange(weekStart, days, lang) {
+    const first = weekStart;
+    const last = addDays(weekStart, days - 1);
+    const monthLabel =
+      first.getMonth() === last.getMonth()
+        ? `${MONTH_LABELS[lang][first.getMonth()]} ${first.getFullYear()}`
+        : `${MONTH_LABELS[lang][first.getMonth()]} – ${MONTH_LABELS[lang][last.getMonth()]} ${last.getFullYear()}`;
+    const rangeLabel = `${first.getDate()}. – ${last.getDate()}.`;
+    return { monthLabel, rangeLabel };
+  }
+
+  _goToWeek(offset, absolute) {
+    this._weekOffset = absolute ? offset : (this._weekOffset || 0) + offset;
+    this._forceScrollReset = true;
+    this._render();
+  }
+
+  /**
+   * Splits events into banner (all-day/multi-day) items and per-day timed,
+   * lane-packed events. Timed events are positioned against the full
+   * 00:00-24:00 day (not clipped to the configured focus window) so that
+   * scrolling the grid still reveals early/late events in their real spot.
+   */
   _layout(dates) {
     const events = (this._data && this._data.events) || [];
-    const { startHour, endHour } = this._gridWindow();
     const dateIndex = new Map(dates.map((d, i) => [toDateKey(d), i]));
 
     const bannerCandidates = [];
@@ -318,9 +344,7 @@ class DaelyPlannerCard extends HTMLElement {
       if (!timedByDay.has(key)) continue;
 
       const gridStart = new Date(startDay);
-      gridStart.setHours(startHour, 0, 0, 0);
-      const gridEnd = new Date(startDay);
-      gridEnd.setHours(endHour, 0, 0, 0);
+      const gridEnd = addDays(startDay, 1);
 
       const rawStart = new Date(event.start);
       const rawEnd = event.end ? new Date(event.end) : new Date(rawStart.getTime() + 30 * 60000);
@@ -337,7 +361,7 @@ class DaelyPlannerCard extends HTMLElement {
     }
 
     const banner = layoutBannerRows(bannerCandidates);
-    return { banner, timedLayoutByDay, startHour, endHour };
+    return { banner, timedLayoutByDay };
   }
 
   /** Groups calendars by their linked person, deduplicated, in first-seen order. */
@@ -395,8 +419,14 @@ class DaelyPlannerCard extends HTMLElement {
       return;
     }
 
-    const { dates, today, lang } = this._weekRange();
-    const { banner, timedLayoutByDay, startHour, endHour } = this._layout(dates);
+    const existingScroller = this.shadowRoot.querySelector(".timegrid-scroll");
+    const preservedScrollTop =
+      !this._forceScrollReset && existingScroller ? existingScroller.scrollTop : null;
+    this._forceScrollReset = false;
+
+    const { dates, today, lang, days, baseWeekStart } = this._weekRange();
+    const { banner, timedLayoutByDay } = this._layout(dates);
+    const { startHour: focusStart, endHour: focusEnd } = this._gridWindow();
     const calendars = (this._data && this._data.calendars) || [];
     const persons = this._personsFromCalendars(calendars);
     const highlightSet = this._highlightedCalendarIds(persons);
@@ -405,17 +435,17 @@ class DaelyPlannerCard extends HTMLElement {
       return highlightSet.has(calendarEntityId) ? " chip-highlighted" : " chip-dimmed";
     };
     const title = this._config.title || "Familienplaner";
-    const gridHours = endHour - startHour;
-    const gridHeight = gridHours * HOUR_HEIGHT_PX;
+    const focusHours = focusEnd - focusStart;
+    const viewportHeight = focusHours * HOUR_HEIGHT_PX;
+    const fullGridHeight = FULL_DAY_HOURS * HOUR_HEIGHT_PX;
     const columnsTemplate = `${GUTTER_WIDTH_PX}px repeat(${dates.length}, 1fr)`;
 
-    const first = dates[0];
-    const last = dates[dates.length - 1];
-    const monthLabel =
-      first.getMonth() === last.getMonth()
-        ? `${MONTH_LABELS[lang][first.getMonth()]} ${first.getFullYear()}`
-        : `${MONTH_LABELS[lang][first.getMonth()]} – ${MONTH_LABELS[lang][last.getMonth()]} ${last.getFullYear()}`;
-    const rangeLabel = `${first.getDate()}. – ${last.getDate()}.`;
+    const weekOptions = [];
+    for (let o = -WEEK_NAV_RANGE; o <= WEEK_NAV_RANGE; o++) {
+      const optionStart = addDays(baseWeekStart, o * 7);
+      const optionLabels = this._formatRange(optionStart, days, lang);
+      weekOptions.push({ offset: o, label: `${optionLabels.rangeLabel} ${optionLabels.monthLabel}` });
+    }
 
     const avatarOrDot = (item) =>
       item.picture
@@ -476,11 +506,10 @@ class DaelyPlannerCard extends HTMLElement {
       </div>`
         : "";
 
-    const hourGutter = Array.from({ length: gridHours + 1 })
-      .map((_, i) => {
-        const hour = startHour + i;
-        const top = i * HOUR_HEIGHT_PX;
-        return `<div class="hour-label" style="top:${top}px;">${pad2(hour % 24)}:00</div>`;
+    const hourGutter = Array.from({ length: FULL_DAY_HOURS + 1 })
+      .map((_, hour) => {
+        const top = hour * HOUR_HEIGHT_PX;
+        return `<div class="hour-label" style="top:${top}px;">${pad2(hour)}:00</div>`;
       })
       .join("");
 
@@ -518,21 +547,24 @@ class DaelyPlannerCard extends HTMLElement {
           })
           .join("");
 
-        return `<div class="day-col ${isToday ? "today" : ""}" style="height:${gridHeight}px;">${blocks}</div>`;
+        return `<div class="day-col ${isToday ? "today" : ""}" style="height:${fullGridHeight}px;">${blocks}</div>`;
       })
       .join("");
 
     const timeGridRow = `
-      <div class="row timegrid-row" style="grid-template-columns: ${columnsTemplate}; height:${gridHeight}px;">
-        <div class="hour-gutter" style="height:${gridHeight}px;">${hourGutter}</div>
-        ${dayColumns}
+      <div class="timegrid-scroll" style="height:${viewportHeight}px;">
+        <div class="row timegrid-row" style="grid-template-columns: ${columnsTemplate}; height:${fullGridHeight}px;">
+          <div class="hour-gutter" style="height:${fullGridHeight}px;">${hourGutter}</div>
+          ${dayColumns}
+        </div>
       </div>`;
 
-    const legendButton = (type, id, item, active, inactive) => `
-      <button class="legend-item ${active ? "active" : ""} ${inactive ? "inactive" : ""}"
+    const legendButton = (type, id, item, active, inactive, showName = true) => `
+      <button class="legend-item ${showName ? "" : "avatar-only"} ${active ? "active" : ""} ${inactive ? "inactive" : ""}"
         style="${active ? `box-shadow: 0 0 0 2px ${item.color};` : ""}"
         data-filter-type="${type}" data-filter-id="${escapeHtml(id)}"
-      >${avatarOrDot(item)}${escapeHtml(item.name)}</button>`;
+        title="${escapeHtml(item.name)}"
+      >${avatarOrDot(item)}${showName ? escapeHtml(item.name) : ""}</button>`;
 
     const personsRow = persons.length
       ? `<div class="header-persons">${persons
@@ -540,7 +572,7 @@ class DaelyPlannerCard extends HTMLElement {
             const active = this._filter.persons.has(person.person_entity_id);
             const anyOverlap = [...person.calendarIds].some((id) => highlightSet.has(id));
             const inactive = highlightSet.size > 0 && !anyOverlap;
-            return legendButton("person", person.person_entity_id, person, active, inactive);
+            return legendButton("person", person.person_entity_id, person, active, inactive, false);
           })
           .join("")}</div>`
       : "";
@@ -561,12 +593,26 @@ class DaelyPlannerCard extends HTMLElement {
     const legend =
       this._config.show_legend && calendarsRow ? `<div class="legend">${calendarsRow}</div>` : "";
 
+    const headerNav = `
+      <div class="header-nav">
+        <button class="nav-btn" data-nav="prev" aria-label="${lang === "de" ? "Vorherige Woche" : "Previous week"}">‹</button>
+        <select class="week-select" aria-label="${lang === "de" ? "Woche wählen" : "Select week"}">
+          ${weekOptions
+            .map(
+              (opt) =>
+                `<option value="${opt.offset}" ${opt.offset === (this._weekOffset || 0) ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
+            )
+            .join("")}
+        </select>
+        <button class="nav-btn" data-nav="next" aria-label="${lang === "de" ? "Nächste Woche" : "Next week"}">›</button>
+      </div>`;
+
     this.shadowRoot.innerHTML = this._styles() + `
       <div class="daely-card">
         <div class="header">
           <div class="header-titles">
             <div class="header-title">${escapeHtml(title)}</div>
-            <div class="header-range">${monthLabel} · ${rangeLabel}</div>
+            ${headerNav}
           </div>
           ${personsRow}
         </div>
@@ -586,6 +632,17 @@ class DaelyPlannerCard extends HTMLElement {
           </div>
         </div>
       </div>`;
+
+    const scroller = this.shadowRoot.querySelector(".timegrid-scroll");
+    if (scroller) {
+      const scrollbarWidth = scroller.offsetWidth - scroller.clientWidth;
+      if (scrollbarWidth > 0) {
+        this.shadowRoot.querySelectorAll(".weekday-row, .banner-row").forEach((el) => {
+          el.style.paddingRight = `${scrollbarWidth}px`;
+        });
+      }
+      scroller.scrollTop = preservedScrollTop !== null ? preservedScrollTop : focusStart * HOUR_HEIGHT_PX;
+    }
 
     this._attachEventHandlers();
   }
@@ -626,6 +683,18 @@ class DaelyPlannerCard extends HTMLElement {
         this._toggleFilter(filterType, filterId);
       });
     });
+
+    root.querySelectorAll(".nav-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this._goToWeek(btn.dataset.nav === "prev" ? -1 : 1);
+      });
+    });
+    const weekSelect = root.querySelector(".week-select");
+    if (weekSelect) {
+      weekSelect.addEventListener("change", () => {
+        this._goToWeek(Number(weekSelect.value), true);
+      });
+    }
   }
 
   _styles() {
@@ -654,21 +723,58 @@ class DaelyPlannerCard extends HTMLElement {
         font-weight: 700;
         letter-spacing: 0.02em;
       }
-      .header-range {
+      .header-nav {
+        display: flex;
+        align-items: center;
+        gap: 2px;
         margin-top: 2px;
+      }
+      .nav-btn {
+        border: none;
+        background: rgba(255,255,255,0.4);
+        color: #2b2320;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
         font-size: 0.9em;
-        opacity: 0.85;
+        line-height: 1;
+        cursor: pointer;
+        flex: none;
+      }
+      .nav-btn:hover {
+        background: rgba(255,255,255,0.7);
+      }
+      .week-select {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: #2b2320;
+        font: inherit;
+        font-size: 0.9em;
+        opacity: 0.9;
         text-transform: capitalize;
+        cursor: pointer;
+        padding: 2px 4px;
       }
       .header-persons {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px;
+        gap: 8px;
         align-items: center;
       }
       .header-persons .legend-item {
         color: #2b2320;
         background: rgba(255,255,255,0.4);
+      }
+      .header-persons .avatar {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+      }
+      .header-persons .dot {
+        width: 14px;
+        height: 14px;
+        min-width: 14px;
       }
       .header-persons .legend-item.active {
         color: #2b2320;
@@ -718,6 +824,10 @@ class DaelyPlannerCard extends HTMLElement {
         padding: 3px 0;
         row-gap: 2px;
       }
+      .timegrid-scroll {
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
       .timegrid-row {
         position: relative;
       }
@@ -726,10 +836,14 @@ class DaelyPlannerCard extends HTMLElement {
       }
       .hour-label {
         position: absolute;
-        right: 6px;
+        right: 0;
         transform: translateY(-50%);
-        font-size: 0.65em;
+        font-size: 0.68em;
+        font-variant-numeric: tabular-nums;
         color: var(--secondary-text-color);
+        background: var(--card-background-color, #fff);
+        padding: 1px 8px 1px 6px;
+        white-space: nowrap;
       }
       .day-col {
         position: relative;
@@ -860,6 +974,10 @@ class DaelyPlannerCard extends HTMLElement {
       }
       .legend-item.inactive {
         opacity: 0.4;
+      }
+      .legend-item.avatar-only {
+        padding: 2px;
+        border-radius: 50%;
       }
       .warning {
         padding: 16px;
