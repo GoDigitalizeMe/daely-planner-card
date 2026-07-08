@@ -178,11 +178,18 @@ class DaelyPlannerCard extends HTMLElement {
       days: null,
       show_weekends: true,
       show_legend: true,
-      day_start_hour: 8,
+      day_start_hour: 6,
       day_end_hour: 18,
+      viewport_padding_minutes: 30,
       ...config,
     };
     this._render();
+  }
+
+  _viewportPaddingPx() {
+    const minutes = Number(this._config?.viewport_padding_minutes ?? 30);
+    if (!Number.isFinite(minutes) || minutes < 0) return HOUR_HEIGHT_PX / 2;
+    return (Math.min(180, minutes) / 60) * HOUR_HEIGHT_PX;
   }
 
   set hass(hass) {
@@ -262,17 +269,17 @@ class DaelyPlannerCard extends HTMLElement {
   }
 
   _gridHours() {
-    const start = Number(this._config?.day_start_hour ?? 8);
+    const start = Number(this._config?.day_start_hour ?? 6);
     const end = Number(this._config?.day_end_hour ?? 18);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 10;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 12;
     return Math.min(24, end - start);
   }
 
   _gridWindow() {
-    const start = Number(this._config?.day_start_hour ?? 8);
+    const start = Number(this._config?.day_start_hour ?? 6);
     const end = Number(this._config?.day_end_hour ?? 18);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 24) {
-      return { startHour: 8, endHour: 18 };
+      return { startHour: 6, endHour: 18 };
     }
     return { startHour: Math.max(0, start), endHour: Math.min(24, end) };
   }
@@ -436,8 +443,10 @@ class DaelyPlannerCard extends HTMLElement {
     };
     const title = this._config.title || "Familienplaner";
     const focusHours = focusEnd - focusStart;
-    const viewportHeight = focusHours * HOUR_HEIGHT_PX;
+    const viewportPadding = this._viewportPaddingPx();
+    const viewportHeight = focusHours * HOUR_HEIGHT_PX + 2 * viewportPadding;
     const fullGridHeight = FULL_DAY_HOURS * HOUR_HEIGHT_PX;
+    const defaultScrollTop = Math.max(0, focusStart * HOUR_HEIGHT_PX - viewportPadding);
     const columnsTemplate = `${GUTTER_WIDTH_PX}px repeat(${dates.length}, 1fr)`;
 
     const weekOptions = [];
@@ -641,7 +650,7 @@ class DaelyPlannerCard extends HTMLElement {
           el.style.paddingRight = `${scrollbarWidth}px`;
         });
       }
-      scroller.scrollTop = preservedScrollTop !== null ? preservedScrollTop : focusStart * HOUR_HEIGHT_PX;
+      scroller.scrollTop = preservedScrollTop !== null ? preservedScrollTop : defaultScrollTop;
     }
 
     this._attachEventHandlers();
@@ -1053,14 +1062,16 @@ const EDITOR_LABELS = {
   title: "Titel",
   language: "Sprache",
   first_day_of_week: "Wochenstart",
-  day_start_hour: "Startzeit (Stunde)",
-  day_end_hour: "Endzeit (Stunde)",
+  day_start_hour: "Sichtbar ab (Stunde)",
+  day_end_hour: "Sichtbar bis (Stunde)",
+  viewport_padding_minutes: "Rand oben/unten (Minuten)",
   show_weekends: "Wochenende anzeigen",
   show_legend: "Legende anzeigen",
 };
 
 const EDITOR_HELPERS = {
   entity: "Sensor-Entity der Daely-Planner-Integration",
+  viewport_padding_minutes: "Zusätzlicher Platz, damit die Rand-Uhrzeiten nicht abgeschnitten wirken",
 };
 
 class DaelyPlannerCardEditor extends HTMLElement {
@@ -1118,6 +1129,10 @@ class DaelyPlannerCardEditor extends HTMLElement {
           { name: "day_end_hour", selector: { number: { min: 1, max: 24, mode: "box" } } },
         ],
       },
+      {
+        name: "viewport_padding_minutes",
+        selector: { number: { min: 0, max: 180, step: 5, mode: "box" } },
+      },
       { name: "show_weekends", selector: { boolean: {} } },
       { name: "show_legend", selector: { boolean: {} } },
     ];
@@ -1141,8 +1156,9 @@ class DaelyPlannerCardEditor extends HTMLElement {
     const defaults = {
       language: "de",
       first_day_of_week: "monday",
-      day_start_hour: 8,
+      day_start_hour: 6,
       day_end_hour: 18,
+      viewport_padding_minutes: 30,
       show_weekends: true,
       show_legend: true,
     };

@@ -1,7 +1,7 @@
 # Daely Planner Card
 
 Lovelace-Karte im Stil des [Dæly Familienkalenders](https://daely-shop.com/products/daely-calendar-familienkalender-familienplaner-15-6):
-ein Tages-Zeitraster (Standard 08:00–18:00 Uhr) mit farbcodierten Terminen
+ein Tages-Zeitraster (Standard 06:00–18:00 Uhr) mit farbcodierten Terminen
 aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
 
 - **Termine mit Uhrzeit** erscheinen im Zeitraster genau dort, wo sie
@@ -10,9 +10,10 @@ aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
 - **Ganztägige und mehrtägige Termine** (auch mehrtägige Termine *mit*
   Uhrzeit, z. B. eine Dienstreise) werden als Banner oberhalb des
   Zeitrasters über die betroffenen Tage angezeigt.
-- Das Zeitraster zeigt standardmäßig **08:00–18:00 Uhr** ohne Scrollen,
-  lässt sich aber nach oben/unten scrollen, um frühere/spätere Termine zu
-  sehen – der volle Tag (00:00–24:00) ist immer erreichbar.
+- Das Zeitraster zeigt standardmäßig **06:00–18:00 Uhr** ohne Scrollen
+  (per `day_start_hour`/`day_end_hour` frei einstellbar), lässt sich aber
+  nach oben/unten scrollen, um frühere/spätere Termine zu sehen – der
+  volle Tag (00:00–24:00) ist immer erreichbar.
 - **Wochennavigation**: Pfeile und ein Dropdown im Header wechseln zur
   vorherigen/nächsten bzw. einer frei wählbaren Woche (±12 Wochen).
 
@@ -48,8 +49,9 @@ entity: sensor.familie_termine   # Sensor der daely_planner-Integration
 title: Familienplaner
 language: de
 first_day_of_week: monday
-day_start_hour: 8
+day_start_hour: 6
 day_end_hour: 18
+viewport_padding_minutes: 30
 show_weekends: true
 show_legend: true
 ```
@@ -60,8 +62,9 @@ show_legend: true
 | `title` | Entity-Titel | Überschrift der Karte |
 | `language` | `de` | Sprache für Wochentage/Monate (`de`/`en`) |
 | `first_day_of_week` | `monday` | Wochenstart |
-| `day_start_hour` | `8` | Ohne Scrollen sichtbarer Bereich beginnt hier |
+| `day_start_hour` | `6` | Ohne Scrollen sichtbarer Bereich beginnt hier |
 | `day_end_hour` | `18` | Ohne Scrollen sichtbarer Bereich endet hier |
+| `viewport_padding_minutes` | `30` | Zusätzlicher Rand oben/unten, damit die Randstunden nicht abgeschnitten wirken |
 | `days` | `7` (bzw. `5` bei `show_weekends: false`) | Anzahl angezeigter Tage |
 | `show_weekends` | `true` | `false` blendet Sa/So aus |
 | `show_legend` | `true` | Farblegende der Kalender ein-/ausblenden |
