@@ -1,7 +1,15 @@
 # Daely Planner Card
 
 Lovelace-Karte im Stil des [Dæly Familienkalenders](https://daely-shop.com/products/daely-calendar-familienkalender-familienplaner-15-6):
-ein Wochenraster mit farbcodierten Terminen aus mehreren Kalendern.
+ein Tages-Zeitraster (Standard 08:00–18:00 Uhr) mit farbcodierten Terminen
+aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
+
+- **Termine mit Uhrzeit** erscheinen im Zeitraster genau dort, wo sie
+  stattfinden (überlappende Termine werden automatisch nebeneinander
+  gesetzt).
+- **Ganztägige und mehrtägige Termine** (auch mehrtägige Termine *mit*
+  Uhrzeit, z. B. eine Dienstreise) werden als Banner oberhalb des
+  Zeitrasters über die betroffenen Tage angezeigt.
 
 Diese Karte ist der reine Anzeige-Layer. Die eigentliche Logik (Kalenderauswahl,
 Farben, Datenabruf) übernimmt die zugehörige Python-Integration:
@@ -35,6 +43,8 @@ entity: sensor.familie_termine   # Sensor der daely_planner-Integration
 title: Familienplaner
 language: de
 first_day_of_week: monday
+day_start_hour: 8
+day_end_hour: 18
 show_weekends: true
 show_legend: true
 ```
@@ -45,6 +55,15 @@ show_legend: true
 | `title` | Entity-Titel | Überschrift der Karte |
 | `language` | `de` | Sprache für Wochentage/Monate (`de`/`en`) |
 | `first_day_of_week` | `monday` | Wochenstart |
+| `day_start_hour` | `8` | Erste angezeigte Stunde im Zeitraster |
+| `day_end_hour` | `18` | Letzte angezeigte Stunde im Zeitraster |
 | `days` | `7` (bzw. `5` bei `show_weekends: false`) | Anzahl angezeigter Tage |
 | `show_weekends` | `true` | `false` blendet Sa/So aus |
 | `show_legend` | `true` | Farblegende der Kalender ein-/ausblenden |
+
+## Kalender einer Person zuordnen
+
+Verknüpfe in der [Integration](https://github.com/GoDigitalizeMe/daely-planner-ha)
+einen Kalender optional mit einer `person.*`-Entity. Ist eine Person
+hinterlegt, zeigt die Karte automatisch deren Profilbild statt eines
+schlichten Farbpunkts – an Terminen, in der Legende und im Detail-Popup.

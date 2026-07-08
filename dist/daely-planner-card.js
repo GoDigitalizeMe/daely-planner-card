@@ -1,9 +1,11 @@
 /**
  * Daely Planner Card
  *
- * A Lovelace card styled after the Daely family calendar: a weekly grid
- * with one column per day, events from several Home Assistant calendars
- * stacked underneath, each colored per the "Daely Planner" custom
+ * A Lovelace card styled after the Daely family calendar: a fixed daily
+ * time grid (default 08:00-18:00) with one column per day. Timed events
+ * are positioned/sized where they actually occur; all-day and multi-day
+ * events are shown as spanning banners above the grid. Colors (and
+ * optionally a person's avatar) come from the "Daely Planner" custom
  * integration's configuration. Talks to the backend only through the
  * `daely_planner/get_events` WebSocket command exposed by that integration.
  */
@@ -23,6 +25,11 @@ const MONTH_LABELS = {
     "July", "August", "September", "October", "November", "December",
   ],
 };
+
+const HOUR_HEIGHT_PX = 56;
+const MIN_EVENT_HEIGHT_PX = 22;
+const BANNER_ROW_HEIGHT_PX = 26;
+const GUTTER_WIDTH_PX = 46;
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -44,6 +51,12 @@ function addDays(date, days) {
   return d;
 }
 
+function clampDate(date, min, max) {
+  if (date < min) return new Date(min);
+  if (date > max) return new Date(max);
+  return new Date(date);
+}
+
 function hexToRgba(hex, alpha) {
   const clean = (hex || "#8FC1D4").replace("#", "");
   const bigint = parseInt(clean, 16);
@@ -57,6 +70,83 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
+}
+
+/**
+ * Classifies an event as a "banner" item (rendered above the time grid) if
+ * it's marked all-day, OR if it's a timed event spanning more than one
+ * calendar day (e.g. a trip logged as Mon 09:00 - Wed 17:00). Everything
+ * else is a single-day timed event rendered inside the grid.
+ */
+function eventSpan(event) {
+  const start = new Date(event.start);
+  const startDay = startOfDay(start);
+  let endExclusive;
+  if (event.all_day) {
+    // "end" for all-day events is exclusive per iCal convention.
+    endExclusive = event.end ? startOfDay(new Date(event.end)) : addDays(startDay, 1);
+  } else {
+    const end = event.end ? new Date(event.end) : start;
+    endExclusive = addDays(startOfDay(end), 1);
+  }
+  const isMultiDay = endExclusive - startDay > 24 * 60 * 60 * 1000;
+  return { startDay, endExclusive, isBanner: Boolean(event.all_day) || isMultiDay };
+}
+
+/** Packs overlapping timed events into side-by-side lanes, per connected cluster. */
+function layoutLanes(entries) {
+  const sorted = [...entries].sort((a, b) => a.start - b.start || a.end - b.end);
+  const clusters = [];
+  let current = [];
+  let currentMaxEnd = -Infinity;
+  for (const entry of sorted) {
+    if (current.length === 0 || entry.start < currentMaxEnd) {
+      current.push(entry);
+      currentMaxEnd = Math.max(currentMaxEnd, entry.end.getTime());
+    } else {
+      clusters.push(current);
+      current = [entry];
+      currentMaxEnd = entry.end.getTime();
+    }
+  }
+  if (current.length) clusters.push(current);
+
+  const positioned = [];
+  for (const cluster of clusters) {
+    const laneEnds = [];
+    for (const entry of cluster) {
+      let lane = laneEnds.findIndex((end) => end <= entry.start.getTime());
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(entry.end.getTime());
+      } else {
+        laneEnds[lane] = entry.end.getTime();
+      }
+      positioned.push({ ...entry, lane });
+    }
+    const totalLanes = laneEnds.length;
+    for (const entry of positioned.slice(-cluster.length)) entry.totalLanes = totalLanes;
+  }
+  return positioned;
+}
+
+/** Stacks banner (all-day/multi-day) items into rows so overlapping date ranges don't collide. */
+function layoutBannerRows(items) {
+  const sorted = [...items].sort(
+    (a, b) => a.startCol - b.startCol || b.endCol - b.startCol - (a.endCol - a.startCol)
+  );
+  const rowEndCol = [];
+  for (const item of sorted) {
+    let row = rowEndCol.findIndex((endCol) => endCol < item.startCol);
+    if (row === -1) {
+      row = rowEndCol.length;
+      rowEndCol.push(item.endCol);
+    } else {
+      rowEndCol[row] = item.endCol;
+    }
+    item.row = row;
+  }
+  return { items: sorted, rowCount: rowEndCol.length };
 }
 
 class DaelyPlannerCard extends HTMLElement {
@@ -83,6 +173,8 @@ class DaelyPlannerCard extends HTMLElement {
       days: null,
       show_weekends: true,
       show_legend: true,
+      day_start_hour: 8,
+      day_end_hour: 18,
       ...config,
     };
     this._render();
@@ -149,7 +241,8 @@ class DaelyPlannerCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 6;
+    const hours = this._gridHours();
+    return Math.ceil((hours * HOUR_HEIGHT_PX + 180) / 50);
   }
 
   static getStubConfig(hass) {
@@ -161,6 +254,22 @@ class DaelyPlannerCard extends HTMLElement {
 
   static getConfigElement() {
     return document.createElement("daely-planner-card-editor");
+  }
+
+  _gridHours() {
+    const start = Number(this._config?.day_start_hour ?? 8);
+    const end = Number(this._config?.day_end_hour ?? 18);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 10;
+    return Math.min(24, end - start);
+  }
+
+  _gridWindow() {
+    const start = Number(this._config?.day_start_hour ?? 8);
+    const end = Number(this._config?.day_end_hour ?? 18);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 24) {
+      return { startHour: 8, endHour: 18 };
+    }
+    return { startHour: Math.max(0, start), endHour: Math.min(24, end) };
   }
 
   _weekRange() {
@@ -178,33 +287,56 @@ class DaelyPlannerCard extends HTMLElement {
     return { dates, today, lang };
   }
 
-  _eventsByDay(dates) {
-    const byDay = new Map(dates.map((d) => [toDateKey(d), []]));
+  /** Splits events into banner (all-day/multi-day) items and per-day timed, lane-packed events. */
+  _layout(dates) {
     const events = (this._data && this._data.events) || [];
+    const { startHour, endHour } = this._gridWindow();
+    const dateIndex = new Map(dates.map((d, i) => [toDateKey(d), i]));
+
+    const bannerCandidates = [];
+    const timedByDay = new Map(dates.map((d) => [toDateKey(d), []]));
 
     for (const event of events) {
-      if (event.all_day) {
-        const start = startOfDay(new Date(event.start));
-        // "end" for all-day events is exclusive per iCal convention.
-        const end = event.end ? startOfDay(new Date(event.end)) : addDays(start, 1);
-        for (let d = start; d < end; d = addDays(d, 1)) {
-          const key = toDateKey(d);
-          if (byDay.has(key)) byDay.get(key).push(event);
+      const { startDay, endExclusive, isBanner } = eventSpan(event);
+
+      if (isBanner) {
+        let firstIdx = -1;
+        let lastIdx = -1;
+        for (let d = new Date(startDay); d < endExclusive; d = addDays(d, 1)) {
+          const idx = dateIndex.get(toDateKey(d));
+          if (idx !== undefined) {
+            if (firstIdx === -1) firstIdx = idx;
+            lastIdx = idx;
+          }
         }
-      } else {
-        const start = new Date(event.start);
-        const key = toDateKey(start);
-        if (byDay.has(key)) byDay.get(key).push(event);
+        if (firstIdx !== -1) bannerCandidates.push({ event, startCol: firstIdx, endCol: lastIdx });
+        continue;
       }
+
+      const key = toDateKey(startDay);
+      if (!timedByDay.has(key)) continue;
+
+      const gridStart = new Date(startDay);
+      gridStart.setHours(startHour, 0, 0, 0);
+      const gridEnd = new Date(startDay);
+      gridEnd.setHours(endHour, 0, 0, 0);
+
+      const rawStart = new Date(event.start);
+      const rawEnd = event.end ? new Date(event.end) : new Date(rawStart.getTime() + 30 * 60000);
+      const start = clampDate(rawStart, gridStart, gridEnd);
+      let end = clampDate(rawEnd, gridStart, gridEnd);
+      if (end <= start) end = new Date(Math.min(gridEnd.getTime(), start.getTime() + 60000));
+
+      timedByDay.get(key).push({ event, start, end, gridStart });
     }
 
-    for (const list of byDay.values()) {
-      list.sort((a, b) => {
-        if (a.all_day !== b.all_day) return a.all_day ? -1 : 1;
-        return new Date(a.start) - new Date(b.start);
-      });
+    const timedLayoutByDay = new Map();
+    for (const [key, entries] of timedByDay.entries()) {
+      timedLayoutByDay.set(key, layoutLanes(entries));
     }
-    return byDay;
+
+    const banner = layoutBannerRows(bannerCandidates);
+    return { banner, timedLayoutByDay, startHour, endHour };
   }
 
   _render() {
@@ -224,9 +356,12 @@ class DaelyPlannerCard extends HTMLElement {
     }
 
     const { dates, today, lang } = this._weekRange();
-    const byDay = this._eventsByDay(dates);
+    const { banner, timedLayoutByDay, startHour, endHour } = this._layout(dates);
     const calendars = (this._data && this._data.calendars) || [];
     const title = this._config.title || "Familienplaner";
+    const gridHours = endHour - startHour;
+    const gridHeight = gridHours * HOUR_HEIGHT_PX;
+    const columnsTemplate = `${GUTTER_WIDTH_PX}px repeat(${dates.length}, 1fr)`;
 
     const first = dates[0];
     const last = dates[dates.length - 1];
@@ -236,57 +371,122 @@ class DaelyPlannerCard extends HTMLElement {
         : `${MONTH_LABELS[lang][first.getMonth()]} – ${MONTH_LABELS[lang][last.getMonth()]} ${last.getFullYear()}`;
     const rangeLabel = `${first.getDate()}. – ${last.getDate()}.`;
 
-    const columns = dates
+    const avatarOrDot = (item) =>
+      item.picture
+        ? `<img class="avatar" src="${escapeHtml(item.picture)}" alt="">`
+        : `<span class="dot" style="background:${item.color}"></span>`;
+
+    const chipDataAttrs = (event) => `
+      data-summary="${escapeHtml(event.summary)}"
+      data-location="${escapeHtml(event.location || "")}"
+      data-description="${escapeHtml(event.description || "")}"
+      data-calendar="${escapeHtml(event.calendar_name)}"
+      data-color="${escapeHtml(event.color)}"
+      data-picture="${escapeHtml(event.picture || "")}"
+    `;
+
+    const weekdayRow = `
+      <div class="row weekday-row" style="grid-template-columns: ${columnsTemplate};">
+        <div class="gutter-cell"></div>
+        ${dates
+          .map((date) => {
+            const isToday = toDateKey(today) === toDateKey(date);
+            const weekdayLabel = WEEKDAY_LABELS[lang][(date.getDay() + 6) % 7];
+            return `
+              <div class="day-heading ${isToday ? "today" : ""}">
+                <span class="day-weekday">${weekdayLabel}</span>
+                <span class="day-number">${date.getDate()}</span>
+              </div>`;
+          })
+          .join("")}
+      </div>`;
+
+    const bannerRow =
+      banner.rowCount > 0
+        ? `
+      <div class="row banner-row" style="grid-template-columns: ${columnsTemplate}; grid-auto-rows: ${BANNER_ROW_HEIGHT_PX}px; min-height: ${banner.rowCount * BANNER_ROW_HEIGHT_PX}px;">
+        <div class="gutter-cell banner-gutter-label">${lang === "de" ? "Ganztägig" : "All day"}</div>
+        ${banner.items
+          .map((item) => {
+            const time =
+              item.startCol === item.endCol
+                ? ""
+                : `<span class="chip-time">${lang === "de" ? "Mehrtägig" : "Multi-day"}</span>`;
+            return `
+              <button class="chip chip-banner" style="
+                  grid-column: ${item.startCol + 2} / ${item.endCol + 3};
+                  grid-row: ${item.row + 1};
+                  border-left-color:${item.event.color};
+                  background:${hexToRgba(item.event.color, 0.18)};
+                "${chipDataAttrs(item.event)}
+                data-time="${escapeHtml(lang === "de" ? "Ganztägig" : "All day")}"
+              >
+                ${avatarOrDot({ picture: item.event.picture, color: item.event.color })}
+                <span class="chip-summary">${escapeHtml(item.event.summary)}</span>
+                ${time}
+              </button>`;
+          })
+          .join("")}
+      </div>`
+        : "";
+
+    const hourGutter = Array.from({ length: gridHours + 1 })
+      .map((_, i) => {
+        const hour = startHour + i;
+        const top = i * HOUR_HEIGHT_PX;
+        return `<div class="hour-label" style="top:${top}px;">${pad2(hour % 24)}:00</div>`;
+      })
+      .join("");
+
+    const dayColumns = dates
       .map((date) => {
         const key = toDateKey(date);
         const isToday = toDateKey(today) === key;
-        const dayEvents = byDay.get(key) || [];
-        const weekdayLabel = WEEKDAY_LABELS[lang][(date.getDay() + 6) % 7];
+        const entries = timedLayoutByDay.get(key) || [];
 
-        const chips = dayEvents.length
-          ? dayEvents
-              .map((event) => {
-                const time = event.all_day
-                  ? lang === "de" ? "Ganztägig" : "All day"
-                  : new Date(event.start).toLocaleTimeString(lang, {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-                return `
-                  <button class="chip" style="
-                      border-left-color:${event.color};
-                      background:${hexToRgba(event.color, 0.16)};
-                    "
-                    data-summary="${escapeHtml(event.summary)}"
-                    data-time="${escapeHtml(time)}"
-                    data-location="${escapeHtml(event.location || "")}"
-                    data-description="${escapeHtml(event.description || "")}"
-                    data-calendar="${escapeHtml(event.calendar_name)}"
-                    data-color="${escapeHtml(event.color)}"
-                  >
-                    <span class="chip-time">${time}</span>
-                    <span class="chip-summary">${escapeHtml(event.summary)}</span>
-                  </button>`;
-              })
-              .join("")
-          : `<div class="empty-day">·</div>`;
+        const blocks = entries
+          .map((entry) => {
+            const top = ((entry.start - entry.gridStart) / 3600000) * HOUR_HEIGHT_PX;
+            const rawHeight = ((entry.end - entry.start) / 3600000) * HOUR_HEIGHT_PX;
+            const height = Math.max(MIN_EVENT_HEIGHT_PX, rawHeight);
+            const widthPct = 100 / entry.totalLanes;
+            const leftPct = widthPct * entry.lane;
+            const timeLabel = new Date(entry.event.start).toLocaleTimeString(lang, {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            return `
+              <button class="chip chip-timed" style="
+                  top:${top}px;
+                  height:${height}px;
+                  left:calc(${leftPct}% + 2px);
+                  width:calc(${widthPct}% - 4px);
+                  border-left-color:${entry.event.color};
+                  background:${hexToRgba(entry.event.color, 0.18)};
+                "${chipDataAttrs(entry.event)}
+                data-time="${escapeHtml(timeLabel)}"
+              >
+                <span class="chip-time">${timeLabel}</span>
+                <span class="chip-summary">${escapeHtml(entry.event.summary)}</span>
+              </button>`;
+          })
+          .join("");
 
-        return `
-          <div class="day-column ${isToday ? "today" : ""}">
-            <div class="day-header">
-              <span class="day-weekday">${weekdayLabel}</span>
-              <span class="day-number">${date.getDate()}</span>
-            </div>
-            <div class="day-events">${chips}</div>
-          </div>`;
+        return `<div class="day-col ${isToday ? "today" : ""}" style="height:${gridHeight}px;">${blocks}</div>`;
       })
       .join("");
+
+    const timeGridRow = `
+      <div class="row timegrid-row" style="grid-template-columns: ${columnsTemplate}; height:${gridHeight}px;">
+        <div class="hour-gutter" style="height:${gridHeight}px;">${hourGutter}</div>
+        ${dayColumns}
+      </div>`;
 
     const legend = this._config.show_legend
       ? `<div class="legend">${calendars
           .map(
             (cal) =>
-              `<div class="legend-item"><span class="dot" style="background:${cal.color}"></span>${escapeHtml(cal.name)}</div>`
+              `<div class="legend-item">${avatarOrDot(cal)}${escapeHtml(cal.name)}</div>`
           )
           .join("")}</div>`
       : "";
@@ -297,9 +497,9 @@ class DaelyPlannerCard extends HTMLElement {
           <div class="header-title">${escapeHtml(title)}</div>
           <div class="header-range">${monthLabel} · ${rangeLabel}</div>
         </div>
-        <div class="grid" style="grid-template-columns: repeat(${dates.length}, 1fr);">
-          ${columns}
-        </div>
+        ${weekdayRow}
+        ${bannerRow}
+        ${timeGridRow}
         ${legend}
         <div class="modal-backdrop" hidden>
           <div class="modal">
@@ -314,17 +514,17 @@ class DaelyPlannerCard extends HTMLElement {
         </div>
       </div>`;
 
-    this._attachEventHandlers(lang);
+    this._attachEventHandlers();
   }
 
-  _attachEventHandlers(lang) {
+  _attachEventHandlers() {
     const root = this.shadowRoot;
     const backdrop = root.querySelector(".modal-backdrop");
     const closeModal = () => backdrop.setAttribute("hidden", "");
 
     root.querySelectorAll(".chip").forEach((chip) => {
       chip.addEventListener("click", () => {
-        const { summary, time, location, description, calendar, color } = chip.dataset;
+        const { summary, time, location, description, calendar, color, picture } = chip.dataset;
         backdrop.querySelector(".modal-bar").style.background = color;
         backdrop.querySelector(".modal-calendar").textContent = calendar;
         backdrop.querySelector(".modal-calendar").style.color = color;
@@ -334,6 +534,10 @@ class DaelyPlannerCard extends HTMLElement {
         locationEl.textContent = location ? `📍 ${location}` : "";
         locationEl.style.display = location ? "block" : "none";
         backdrop.querySelector(".modal-description").textContent = description || "";
+        const bar = backdrop.querySelector(".modal-bar");
+        bar.innerHTML = picture
+          ? `<img class="avatar avatar-lg" src="${escapeHtml(picture)}" alt="">`
+          : "";
         backdrop.removeAttribute("hidden");
       });
     });
@@ -371,24 +575,18 @@ class DaelyPlannerCard extends HTMLElement {
         opacity: 0.85;
         text-transform: capitalize;
       }
-      .grid {
+      .row {
         display: grid;
-        gap: 1px;
-        background: var(--divider-color, #e4e4e4);
       }
-      .day-column {
-        background: var(--card-background-color, #fff);
-        min-height: 160px;
-        display: flex;
-        flex-direction: column;
+      .gutter-cell {
+        border-right: 1px solid var(--divider-color, #eee);
       }
-      .day-column.today {
-        background: var(--daely-today-background, rgba(242, 166, 160, 0.08));
+      .weekday-row {
+        border-bottom: 1px solid var(--divider-color, #eee);
       }
-      .day-header {
+      .day-heading {
         text-align: center;
         padding: 8px 4px 6px;
-        border-bottom: 1px solid var(--divider-color, #eee);
       }
       .day-weekday {
         display: block;
@@ -402,57 +600,120 @@ class DaelyPlannerCard extends HTMLElement {
         align-items: center;
         justify-content: center;
         margin-top: 2px;
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         font-weight: 700;
-        font-size: 1em;
+        font-size: 0.95em;
       }
-      .day-column.today .day-number {
+      .day-heading.today .day-number {
         background: #F2A6A0;
         color: #fff;
       }
-      .day-events {
-        flex: 1;
-        padding: 6px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        overflow-y: auto;
+      .banner-row {
+        border-bottom: 1px solid var(--divider-color, #eee);
+        padding: 3px 0;
+        row-gap: 2px;
+      }
+      .banner-gutter-label {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-size: 0.62em;
+        color: var(--secondary-text-color);
+        text-align: center;
+        padding: 2px 0;
+        align-self: stretch;
+      }
+      .timegrid-row {
+        position: relative;
+      }
+      .hour-gutter {
+        position: relative;
+      }
+      .hour-label {
+        position: absolute;
+        right: 6px;
+        transform: translateY(-50%);
+        font-size: 0.65em;
+        color: var(--secondary-text-color);
+      }
+      .day-col {
+        position: relative;
+        border-right: 1px solid var(--divider-color, #f0f0f0);
+        background-image: repeating-linear-gradient(
+          to bottom,
+          var(--divider-color, #eee) 0,
+          var(--divider-color, #eee) 1px,
+          transparent 1px,
+          transparent ${HOUR_HEIGHT_PX}px
+        );
+      }
+      .day-col.today {
+        background-color: var(--daely-today-background, rgba(242, 166, 160, 0.08));
       }
       .chip {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1px;
+        align-items: center;
+        gap: 4px;
         border: none;
         border-left: 4px solid;
         border-radius: 6px;
-        padding: 4px 6px;
+        padding: 3px 6px;
         font: inherit;
         text-align: left;
         cursor: pointer;
         color: var(--primary-text-color);
+        overflow: hidden;
+      }
+      .chip-timed {
+        position: absolute;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        z-index: 1;
+      }
+      .chip-banner {
         width: 100%;
       }
       .chip-time {
-        font-size: 0.68em;
+        font-size: 0.65em;
         font-weight: 600;
         opacity: 0.75;
+        white-space: nowrap;
       }
       .chip-summary {
         font-size: 0.78em;
         line-height: 1.2;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .chip-timed .chip-summary {
+        white-space: normal;
         display: -webkit-box;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
       }
-      .empty-day {
-        color: var(--disabled-text-color, #ccc);
-        text-align: center;
-        margin-top: 8px;
+      .dot {
+        width: 9px;
+        height: 9px;
+        min-width: 9px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .avatar {
+        width: 16px;
+        height: 16px;
+        min-width: 16px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      .avatar-lg {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        margin: 12px 0 0 16px;
       }
       .legend {
         display: flex;
@@ -467,12 +728,6 @@ class DaelyPlannerCard extends HTMLElement {
         gap: 6px;
         font-size: 0.82em;
         color: var(--secondary-text-color);
-      }
-      .dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
       }
       .warning {
         padding: 16px;
@@ -496,7 +751,7 @@ class DaelyPlannerCard extends HTMLElement {
         overflow: hidden;
         box-shadow: 0 8px 24px rgba(0,0,0,0.3);
       }
-      .modal-bar { height: 6px; }
+      .modal-bar { min-height: 6px; }
       .modal-calendar {
         padding: 12px 16px 0;
         font-size: 0.78em;
@@ -548,6 +803,8 @@ const EDITOR_LABELS = {
   title: "Titel",
   language: "Sprache",
   first_day_of_week: "Wochenstart",
+  day_start_hour: "Startzeit (Stunde)",
+  day_end_hour: "Endzeit (Stunde)",
   show_weekends: "Wochenende anzeigen",
   show_legend: "Legende anzeigen",
 };
@@ -603,6 +860,14 @@ class DaelyPlannerCardEditor extends HTMLElement {
           },
         },
       },
+      {
+        type: "grid",
+        name: "",
+        schema: [
+          { name: "day_start_hour", selector: { number: { min: 0, max: 23, mode: "box" } } },
+          { name: "day_end_hour", selector: { number: { min: 1, max: 24, mode: "box" } } },
+        ],
+      },
       { name: "show_weekends", selector: { boolean: {} } },
       { name: "show_legend", selector: { boolean: {} } },
     ];
@@ -626,6 +891,8 @@ class DaelyPlannerCardEditor extends HTMLElement {
     const defaults = {
       language: "de",
       first_day_of_week: "monday",
+      day_start_hour: 8,
+      day_end_hour: 18,
       show_weekends: true,
       show_legend: true,
     };
@@ -644,6 +911,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "daely-planner-card",
   name: "Daely Planner Card",
-  description: "Familienkalender im Daely-Stil mit mehreren farbcodierten Kalendern.",
+  description: "Familienkalender im Daely-Stil mit Zeitraster, farbcodierten Kalendern und Personen-Avataren.",
   preview: false,
 });
