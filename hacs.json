@@ -1,6 +1,6 @@
 {
-  "name": "Daely Planner Card",
-  "filename": "daely-planner-card.js",
+  "name": "Familyboard Planner Card",
+  "filename": "familyboard-planner-card.js",
   "render_readme": true,
   "homeassistant": "2024.4.0"
 }

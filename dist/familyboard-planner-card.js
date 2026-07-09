@@ -1,13 +1,14 @@
 /**
- * Daely Planner Card
+ * Familyboard Planner Card
  *
- * A Lovelace card styled after the Daely family calendar: a fixed daily
- * time grid (default 08:00-18:00) with one column per day. Timed events
- * are positioned/sized where they actually occur; all-day and multi-day
+ * A Lovelace card for a family wall calendar: a fixed daily time grid
+ * (default 08:00-18:00) with one column per day. Timed events are
+ * positioned/sized where they actually occur; all-day and multi-day
  * events are shown as spanning banners above the grid. Colors (and
- * optionally a person's avatar) come from the "Daely Planner" custom
- * integration's configuration. Talks to the backend only through the
- * `daely_planner/get_events` WebSocket command exposed by that integration.
+ * optionally a person's avatar) come from the "Familyboard Planner"
+ * custom integration's configuration. Talks to the backend only through
+ * the `familyboard_planner/get_events` WebSocket command exposed by that
+ * integration.
  */
 
 const WEEKDAY_LABELS = {
@@ -151,7 +152,7 @@ function layoutBannerRows(items) {
   return { items: sorted, rowCount: rowEndCol.length };
 }
 
-class DaelyPlannerCard extends HTMLElement {
+class FamilyboardPlannerCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -169,7 +170,7 @@ class DaelyPlannerCard extends HTMLElement {
 
   setConfig(config) {
     if (!config || !config.entity) {
-      throw new Error("daely-planner-card: 'entity' is required (the Daely Planner sensor entity).");
+      throw new Error("familyboard-planner-card: 'entity' is required (the Familyboard Planner sensor entity).");
     }
     this._config = {
       title: null,
@@ -239,13 +240,13 @@ class DaelyPlannerCard extends HTMLElement {
     this._fetching = true;
     try {
       const result = await this._hass.connection.sendMessagePromise({
-        type: "daely_planner/get_events",
+        type: "familyboard_planner/get_events",
         config_entry_id: configEntryId,
       });
       this._data = result;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("daely-planner-card: failed to fetch events", err);
+      console.error("familyboard-planner-card: failed to fetch events", err);
     } finally {
       this._fetching = false;
       this._render();
@@ -265,7 +266,7 @@ class DaelyPlannerCard extends HTMLElement {
   }
 
   static getConfigElement() {
-    return document.createElement("daely-planner-card-editor");
+    return document.createElement("familyboard-planner-card-editor");
   }
 
   _gridHours() {
@@ -420,7 +421,7 @@ class DaelyPlannerCard extends HTMLElement {
 
     if (!this._hass || !this._hass.states[this._config.entity]) {
       this.shadowRoot.innerHTML = this._styles() + `
-        <div class="daely-card">
+        <div class="familyboard-card">
           <div class="warning">Entity "${escapeHtml(this._config.entity)}" not found.</div>
         </div>`;
       return;
@@ -617,7 +618,7 @@ class DaelyPlannerCard extends HTMLElement {
       </div>`;
 
     this.shadowRoot.innerHTML = this._styles() + `
-      <div class="daely-card">
+      <div class="familyboard-card">
         <div class="header">
           <div class="header-titles">
             <div class="header-title">${escapeHtml(title)}</div>
@@ -709,7 +710,7 @@ class DaelyPlannerCard extends HTMLElement {
   _styles() {
     return `<style>
       :host { display: block; }
-      .daely-card {
+      .familyboard-card {
         font-family: var(--paper-font-body1_-_font-family, "Nunito", "Segoe UI", sans-serif);
         background: var(--ha-card-background, var(--card-background-color, #fff));
         border-radius: var(--ha-card-border-radius, 16px);
@@ -724,7 +725,7 @@ class DaelyPlannerCard extends HTMLElement {
         justify-content: space-between;
         gap: 10px 16px;
         padding: 16px 20px;
-        background: var(--daely-header-background, linear-gradient(135deg, #F2A6A0, #F6D186));
+        background: var(--familyboard-header-background, linear-gradient(135deg, #F2A6A0, #F6D186));
         color: #2b2320;
       }
       .header-title {
@@ -866,7 +867,7 @@ class DaelyPlannerCard extends HTMLElement {
         );
       }
       .day-col.today {
-        background-color: var(--daely-today-background, rgba(242, 166, 160, 0.08));
+        background-color: var(--familyboard-today-background, rgba(242, 166, 160, 0.08));
       }
       .chip {
         display: flex;
@@ -1055,7 +1056,7 @@ class DaelyPlannerCard extends HTMLElement {
   }
 }
 
-customElements.define("daely-planner-card", DaelyPlannerCard);
+customElements.define("familyboard-planner-card", FamilyboardPlannerCard);
 
 const EDITOR_LABELS = {
   entity: "Entity",
@@ -1070,11 +1071,11 @@ const EDITOR_LABELS = {
 };
 
 const EDITOR_HELPERS = {
-  entity: "Sensor-Entity der Daely-Planner-Integration",
+  entity: "Sensor-Entity der Familyboard-Planner-Integration",
   viewport_padding_minutes: "Zusätzlicher Platz, damit die Rand-Uhrzeiten nicht abgeschnitten wirken",
 };
 
-class DaelyPlannerCardEditor extends HTMLElement {
+class FamilyboardPlannerCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config;
     this._render();
@@ -1094,7 +1095,7 @@ class DaelyPlannerCardEditor extends HTMLElement {
       {
         name: "entity",
         required: true,
-        selector: { entity: { filter: { integration: "daely_planner" } } },
+        selector: { entity: { filter: { integration: "familyboard_planner" } } },
       },
       { name: "title", selector: { text: {} } },
       {
@@ -1171,12 +1172,12 @@ class DaelyPlannerCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("daely-planner-card-editor", DaelyPlannerCardEditor);
+customElements.define("familyboard-planner-card-editor", FamilyboardPlannerCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "daely-planner-card",
-  name: "Daely Planner Card",
-  description: "Familienkalender im Daely-Stil mit Zeitraster, farbcodierten Kalendern und Personen-Avataren.",
+  type: "familyboard-planner-card",
+  name: "Familyboard Planner Card",
+  description: "Familienkalender-Karte mit Zeitraster, farbcodierten Kalendern und Personen-Avataren.",
   preview: false,
 });

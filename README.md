@@ -1,8 +1,12 @@
-# Daely Planner Card
+# Familyboard Planner Card
 
-Lovelace-Karte im Stil des [Dæly Familienkalenders](https://daely-shop.com/products/daely-calendar-familienkalender-familienplaner-15-6):
-ein Tages-Zeitraster (Standard 06:00–18:00 Uhr) mit farbcodierten Terminen
-aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
+Lovelace-Karte für einen Familien-Wandkalender: ein Tages-Zeitraster
+(Standard 06:00–18:00 Uhr) mit farbcodierten Terminen aus mehreren
+Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
+
+> Dieses Projekt hieß ursprünglich "Daely Planner Card". Da "dæly" eine
+> eingetragene EU-Marke ist (Clarity Computer Solutions GmbH), wurde
+> das Projekt auf "Familyboard" umbenannt.
 
 - **Termine mit Uhrzeit** erscheinen im Zeitraster genau dort, wo sie
   stattfinden (überlappende Termine werden automatisch nebeneinander
@@ -19,7 +23,7 @@ aus mehreren Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
 
 Diese Karte ist der reine Anzeige-Layer. Die eigentliche Logik (Kalenderauswahl,
 Farben, Datenabruf) übernimmt die zugehörige Python-Integration:
-👉 **[daely-planner-ha](https://github.com/GoDigitalizeMe/daely-planner-ha)**
+👉 **[familyboard-planner-ha](https://github.com/GoDigitalizeMe/familyboard-planner-ha)**
 – dort zuerst installieren und einrichten, bevor diese Karte einen
 gültigen `entity`-Wert zur Auswahl hat.
 
@@ -27,25 +31,33 @@ gültigen `entity`-Wert zur Auswahl hat.
 
 1. HACS → Dashboard (bzw. Frontend/Plugin, je nach HACS-Version) →
    benutzerdefiniertes Repository hinzufügen:
-   `https://github.com/GoDigitalizeMe/daely-planner-card`, Typ **Dashboard**
+   `https://github.com/GoDigitalizeMe/familyboard-planner-card`, Typ **Dashboard**
    (ältere HACS-Versionen: **Plugin**).
-2. „Daely Planner Card" in der Liste öffnen und herunterladen.
+2. „Familyboard Planner Card" in der Liste öffnen und herunterladen.
 3. Home Assistant Frontend neu laden (harter Browser-Reload reicht i. d. R.).
 
 ## Manuelle Installation
 
-1. `dist/daely-planner-card.js` nach `config/www/daely-planner-card.js` kopieren.
+1. `dist/familyboard-planner-card.js` nach `config/www/familyboard-planner-card.js` kopieren.
 2. Einstellungen → Dashboards → Ressourcen → Ressource hinzufügen:
-   URL `/local/daely-planner-card.js`, Typ „JavaScript-Modul".
+   URL `/local/familyboard-planner-card.js`, Typ „JavaScript-Modul".
+
+## Umstieg von "Daely Planner Card"
+
+Der Custom-Element-Name hat sich geändert (`daely-planner-card` →
+`familyboard-planner-card`). Karten mit dem alten `type:
+custom:daely-planner-card` müssen im Dashboard auf `type:
+custom:familyboard-planner-card` umgestellt werden, nachdem die neue
+Version installiert ist.
 
 ## Verwendung
 
-Dashboard bearbeiten → Karte hinzufügen → „Daely Planner Card" (visueller
-Editor) oder manuell per YAML:
+Dashboard bearbeiten → Karte hinzufügen → „Familyboard Planner Card"
+(visueller Editor) oder manuell per YAML:
 
 ```yaml
-type: custom:daely-planner-card
-entity: sensor.familie_termine   # Sensor der daely_planner-Integration
+type: custom:familyboard-planner-card
+entity: sensor.familie_termine   # Sensor der familyboard_planner-Integration
 title: Familienplaner
 language: de
 first_day_of_week: monday
@@ -58,7 +70,7 @@ show_legend: true
 
 | Option | Standard | Beschreibung |
 | --- | --- | --- |
-| `entity` | *(erforderlich)* | Sensor-Entity der Daely-Planner-Integration |
+| `entity` | *(erforderlich)* | Sensor-Entity der Familyboard-Planner-Integration |
 | `title` | Entity-Titel | Überschrift der Karte |
 | `language` | `de` | Sprache für Wochentage/Monate (`de`/`en`) |
 | `first_day_of_week` | `monday` | Wochenstart |
@@ -71,7 +83,7 @@ show_legend: true
 
 ## Kalender einer Person zuordnen
 
-Verknüpfe in der [Integration](https://github.com/GoDigitalizeMe/daely-planner-ha)
+Verknüpfe in der [Integration](https://github.com/GoDigitalizeMe/familyboard-planner-ha)
 einen Kalender optional mit einer `person.*`-Entity. Ist eine Person
 hinterlegt, zeigt die Karte automatisch deren Profilbild statt eines
 schlichten Farbpunkts – an Terminen, in der Legende und im Detail-Popup.
