@@ -4,10 +4,6 @@ Lovelace-Karte für einen Familien-Wandkalender: ein Tages-Zeitraster
 (Standard 06:00–18:00 Uhr) mit farbcodierten Terminen aus mehreren
 Kalendern, wahlweise mit Personen-Avataren statt Farbpunkten.
 
-> Dieses Projekt hieß ursprünglich "Daely Planner Card". Da "dæly" eine
-> eingetragene EU-Marke ist (Clarity Computer Solutions GmbH), wurde
-> das Projekt auf "Familyboard" umbenannt.
-
 - **Termine mit Uhrzeit** erscheinen im Zeitraster genau dort, wo sie
   stattfinden (überlappende Termine werden automatisch nebeneinander
   gesetzt).
@@ -41,14 +37,6 @@ gültigen `entity`-Wert zur Auswahl hat.
 1. `dist/familyboard-planner-card.js` nach `config/www/familyboard-planner-card.js` kopieren.
 2. Einstellungen → Dashboards → Ressourcen → Ressource hinzufügen:
    URL `/local/familyboard-planner-card.js`, Typ „JavaScript-Modul".
-
-## Umstieg von "Daely Planner Card"
-
-Der Custom-Element-Name hat sich geändert (`daely-planner-card` →
-`familyboard-planner-card`). Karten mit dem alten `type:
-custom:daely-planner-card` müssen im Dashboard auf `type:
-custom:familyboard-planner-card` umgestellt werden, nachdem die neue
-Version installiert ist.
 
 ## Verwendung
 
