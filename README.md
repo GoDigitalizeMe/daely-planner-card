@@ -68,6 +68,7 @@ show_legend: true
 | `days` | `7` (bzw. `5` bei `show_weekends: false`) | Anzahl angezeigter Tage |
 | `show_weekends` | `true` | `false` blendet Sa/So aus |
 | `show_legend` | `true` | Farblegende der Kalender ein-/ausblenden |
+| `exclude_persons` | `[]` | Liste von `person.*`-Entities, die im Header/Filter nicht angezeigt werden (z. B. ein Display-/Wallboard-Account) |
 
 ## Kalender einer Person zuordnen
 

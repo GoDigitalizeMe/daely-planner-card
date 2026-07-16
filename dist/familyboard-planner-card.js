@@ -182,6 +182,7 @@ class FamilyboardPlannerCard extends HTMLElement {
       day_start_hour: 6,
       day_end_hour: 18,
       viewport_padding_minutes: 30,
+      exclude_persons: [],
       ...config,
     };
     this._render();
@@ -374,10 +375,11 @@ class FamilyboardPlannerCard extends HTMLElement {
 
   /** Groups calendars by their linked person, deduplicated, in first-seen order. */
   _personsFromCalendars(calendars) {
+    const excluded = this._config.exclude_persons || [];
     const byId = new Map();
     for (const cal of calendars) {
       const personId = cal.person_entity_id;
-      if (!personId) continue;
+      if (!personId || excluded.includes(personId)) continue;
       if (!byId.has(personId)) {
         byId.set(personId, {
           person_entity_id: personId,
@@ -588,8 +590,13 @@ class FamilyboardPlannerCard extends HTMLElement {
       : "";
 
     // Calendars linked to a person are represented by that person in the
-    // header instead, so the footer only lists the unassigned ones.
-    const calendarsWithoutPerson = calendars.filter((cal) => !cal.person_entity_id);
+    // header instead, so the footer only lists the unassigned ones - a
+    // calendar whose person was hidden via exclude_persons falls back
+    // here too, so it doesn't disappear from both rows at once.
+    const excludedPersons = this._config.exclude_persons || [];
+    const calendarsWithoutPerson = calendars.filter(
+      (cal) => !cal.person_entity_id || excludedPersons.includes(cal.person_entity_id)
+    );
     const calendarsRow = calendarsWithoutPerson.length
       ? `<div class="legend-row legend-calendars">${calendarsWithoutPerson
           .map((cal) => {
@@ -1068,11 +1075,13 @@ const EDITOR_LABELS = {
   viewport_padding_minutes: "Rand oben/unten (Minuten)",
   show_weekends: "Wochenende anzeigen",
   show_legend: "Legende anzeigen",
+  exclude_persons: "Ausgeblendete Personen",
 };
 
 const EDITOR_HELPERS = {
   entity: "Sensor-Entity der Familyboard-Planner-Integration",
   viewport_padding_minutes: "Zusätzlicher Platz, damit die Rand-Uhrzeiten nicht abgeschnitten wirken",
+  exclude_persons: "Diese Personen erscheinen nicht im Header/Filter (z. B. ein Display-/Wallboard-Account)",
 };
 
 class FamilyboardPlannerCardEditor extends HTMLElement {
@@ -1136,6 +1145,10 @@ class FamilyboardPlannerCardEditor extends HTMLElement {
       },
       { name: "show_weekends", selector: { boolean: {} } },
       { name: "show_legend", selector: { boolean: {} } },
+      {
+        name: "exclude_persons",
+        selector: { entity: { domain: "person", multiple: true } },
+      },
     ];
   }
 
@@ -1162,6 +1175,7 @@ class FamilyboardPlannerCardEditor extends HTMLElement {
       viewport_padding_minutes: 30,
       show_weekends: true,
       show_legend: true,
+      exclude_persons: [],
     };
 
     this._form.hass = this._hass;
