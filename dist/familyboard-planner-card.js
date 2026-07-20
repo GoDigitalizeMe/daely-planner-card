@@ -60,13 +60,16 @@ function clampDate(date, min, max) {
   return new Date(date);
 }
 
-function hexToRgba(hex, alpha) {
-  const clean = (hex || "#8FC1D4").replace("#", "");
-  const bigint = parseInt(clean, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/**
+ * A tint of `hex` blended toward the card's *actual* current background
+ * (light or dark) instead of a flat rgba() alpha composite. rgba() looks
+ * fine on a white card but turns muddy/low-contrast on a dark one, since
+ * it's really compositing toward whatever's behind it; color-mix() mixes
+ * toward the real background color, staying a readable pastel in both
+ * light and dark themes.
+ */
+function tintedBackground(hex, percent) {
+  return `color-mix(in srgb, ${hex || "#8FC1D4"} ${percent}%, var(--card-background-color, #fff) ${100 - percent}%)`;
 }
 
 function escapeHtml(value) {
@@ -505,7 +508,7 @@ class FamilyboardPlannerCard extends HTMLElement {
                   grid-column: ${item.startCol + 2} / ${item.endCol + 3};
                   grid-row: ${item.row + 1};
                   border-left-color:${item.event.color};
-                  background:${hexToRgba(item.event.color, 0.18)};
+                  background:${tintedBackground(item.event.color, 30)};
                 "${chipDataAttrs(item.event)}
                 data-time="${escapeHtml(lang === "de" ? "Ganztägig" : "All day")}"
               >
@@ -549,7 +552,7 @@ class FamilyboardPlannerCard extends HTMLElement {
                   left:calc(${leftPct}% + 2px);
                   width:calc(${widthPct}% - 4px);
                   border-left-color:${entry.event.color};
-                  background:${hexToRgba(entry.event.color, 0.18)};
+                  background:${tintedBackground(entry.event.color, 30)};
                 "${chipDataAttrs(entry.event)}
                 data-time="${escapeHtml(timeLabel)}"
               >
@@ -874,7 +877,7 @@ class FamilyboardPlannerCard extends HTMLElement {
         );
       }
       .day-col.today {
-        background-color: var(--familyboard-today-background, rgba(242, 166, 160, 0.08));
+        background-color: var(--familyboard-today-background, color-mix(in srgb, #F2A6A0 8%, var(--card-background-color, #fff) 92%));
       }
       .chip {
         display: flex;
